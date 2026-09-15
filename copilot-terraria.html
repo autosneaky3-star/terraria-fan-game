@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terraria Pro - Made by Copilot</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #0a0e27;
+            font-family: Arial, sans-serif;
+            user-select: none;
+        }
+        canvas {
+            display: block;
+        }
+        #ui {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-size: 12px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 12px;
+            border-radius: 8px;
+            border: 2px solid #4dd0e1;
+            z-index: 100;
+        }
+        #stats {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 12px;
+            border-radius: 8px;
+            border: 2px solid #ff6b6b;
+            color: white;
+            font-size: 12px;
+            z-index: 100;
+        }
+        .bar-container {
+            width: 150px;
+            height: 16px;
+            background: #333;
+            border: 1px solid #555;
+            border-radius: 3px;
+            overflow: hidden;
+            margin: 5px 0;
+        }
+        .bar-fill {
+            height: 100%;
+            transition: width 0.1s;
+        }
+        #hp-bar { background: linear-gradient(90deg, #ff4444, #ff8888); }
+        #mana-bar { background: linear-gradient(90deg, #4444ff, #8888ff); }
+        .hotbar-container {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 4px;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 8px;
+            border-radius: 8px;
+            border: 2px solid #ffd700;
+            z-index: 100;
+        }
+        .hotbar-slot {
+            width: 45px;
+            height: 45px;
+            border: 2px solid #666;
+            background: #222;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 11px;
+            color: white;
+            position: relative;
+        }
+        .hotbar-slot.active {
+            border-color: #ffd700;
+            background: #444;
+            box-shadow: 0 0 8px #ffd700;
+        }
+        .slot-count {
+            position: absolute;
+            bottom: 2px;
+            right: 2px;
+            background: #000;
+            padding: 1px 3px;
+            border-radius: 2px;
+            font-size: 9px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="ui">
+        <strong>⚔️ TERRARIA PRO ⚔️</strong><br>
+        A/D: Move | Space: Jump | Click: Mine/Attack | Scroll: Inventory
+    </div>
+    <div id="stats">
+        <div>❤️ <span id="hp-text">100/100</span></div>
+        <div class="bar-container"><div id="hp-bar" class="bar-fill" style="width: 100%"></div></div>
+        <div>✨ <span id="mana-text">50/50</span></div>
+        <div class="bar-container"><div id="mana-bar" class="bar-fill" style="width: 100%"></div></div>
+        <div style="margin-top: 8px;">Depth: <span id="depth-text">0m</span></div>
+        <div>Biome: <span id="biome-text">Forest</span></div>
+    </div>
+    <div class="hotbar-container" id="hotbar"></div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // CONSTANTS
+        const TILE_SIZE = 32;
+        const MAP_WIDTH = 200;
+        const MAP_HEIGHT = 80;
+        const GRAVITY = 0.6;
+        const FRICTION = 0.85;
+
+        // ITEMS
+        const ITEMS = {
+            pickaxe: { name: 'Pickaxe', type: 'tool', color: '#d4a574' },
+            sword: { name: 'Sword', type: 'weapon', damage: 10, color: '#c0c0c0' },
+            grass: { name: 'Grass', type: 'block', tileId: 1, color: '#22c55e' },
+            dirt: { name: 'Dirt', type: 'block', tileId: 2, color: '#8b6914' },
+            stone: { name: 'Stone', type: 'block', tileId: 3, color: '#808080' },
+            wood: { name: 'Wood', type: 'block', tileId: 4, color: '#8b4513' }
+        };
+
+        // PLAYER
+        const player = {
+            x: 100 * TILE_SIZE,
+            y: 20 * TILE_SIZE,
+            width: 20,
+            height: 30,
+            vx: 0,
+            vy: 0,
+            speed: 3.5,
+            jumpPower: 10,
+            grounded: false,
+            hp: 100,
+            maxHp: 100,
+            mana: 50,
+            maxMana: 50,
+            direction: 1,
+            cooldown: 0,
+            depth: 0,
+            biome: 'Forest',
+            inventory: [
+                { id: 'pickaxe', count: 1 },
+                { id: 'sword', count: 1 },
+                { id: 'grass', count: 50 },
+                { id: 'dirt', count: 100 },
+                { id: 'stone', count: 30 },
+                { id: 'wood', count: 40 }
+            ],
+            activeSlot: 0
+        };
+
+        // WORLD
+        const world = {};
+
+        function setTile(x, y, id) {
+            if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return;
+            world[`${x},${y}`] = id;
+        }
+
+        function getTile(x, y) {
+            if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return 0;
+            return world[`${x},${y}`] || 0;
+        }
+
+        // GENERATE WORLD
+        function generateWorld() {
+            const surfaceLevel = 20;
+            
+            for (let x = 0; x < MAP_WIDTH; x++) {
+                const noise1 = Math.sin(x * 0.05) * 6;
+                const noise2 = Math.cos(x * 0.08) * 4;
+                const surfaceY = Math.round(surfaceLevel + noise1 + noise2);
+
+                for (let y = 0; y < MAP_HEIGHT; y++) {
+                    if (y >= surfaceY) {
+                        if (y === surfaceY) setTile(x, y, 1); // Grass
+                        else if (y < surfaceY + 8) setTile(x, y, 2); // Dirt
+                        else setTile(x, y, 3); // Stone
+                    }
+                }
+
+                // Trees
+                if (getTile(x, surfaceY + 1) === 1 && Math.random() < 0.06) {
+                    const treeH = 4 + Math.floor(Math.random() * 3);
+                    for (let i = 0; i < treeH; i++) {
+                        setTile(x, surfaceY - i, 4);
+                    }
+                }
+            }
+
+            // Spawn player
+            for (let x = MAP_WIDTH / 2 - 10; x < MAP_WIDTH / 2 + 10; x++) {
+                for (let y = 0; y < MAP_HEIGHT; y++) {
+                    if (getTile(x, y) === 1) {
+                        player.x = x * TILE_SIZE;
+                        player.y = (y - 2) * TILE_SIZE;
+                        return;
+                    }
+                }
+            }
+        }
+
+        // ENEMIES
+        let enemies = [];
+        function spawnEnemy() {
+            if (enemies.length > 8) return;
+            const x = Math.random() < 0.5 ? 10 : MAP_WIDTH - 10;
+            const y = 15;
+            enemies.push({
+                x: x * TILE_SIZE,
+                y: y * TILE_SIZE,
+                width: 20,
+                height: 20,
+                vx: 0,
+                vy: 0,
+                hp: 20,
+                maxHp: 20,
+                color: '#00dd00',
+                jumpTimer: 0
+            });
+        }
+
+        // PARTICLES
+        let particles = [];
+        function addParticle(x, y, vx, vy, color) {
+            particles.push({ x, y, vx, vy, color, life: 30 });
+        }
+
+        // INPUT
+        const keys = {};
+        let mouseX = 0, mouseY = 0, mouseDown = false;
+
+        window.addEventListener('keydown', e => keys[e.code] = true);
+        window.addEventListener('keyup', e => keys[e.code] = false);
+        window.addEventListener('mousemove', e => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+        });
+        window.addEventListener('mousedown', () => mouseDown = true);
+        window.addEventListener('mouseup', () => mouseDown = false);
+        window.addEventListener('wheel', e => {
+            e.preventDefault();
+            player.activeSlot = (player.activeSlot + (e.deltaY > 0 ? 1 : -1)) % player.inventory.length;
+            updateHotbar();
+        });
+
+        function updateHotbar() {
+            const hotbar = document.getElementById('hotbar');
+            hotbar.innerHTML = '';
+            player.inventory.forEach((item, idx) => {
+                const slot = document.createElement('div');
+                slot.className = 'hotbar-slot' + (idx === player.activeSlot ? ' active' : '');
+                slot.textContent = idx + 1;
+                if (item.count > 1) {
+                    const cnt = document.createElement('div');
+                    cnt.className = 'slot-count';
+                    cnt.textContent = item.count;
+                    slot.appendChild(cnt);
+                }
+                hotbar.appendChild(slot);
+            });
+        }
+
+        // COLLISION
+        function checkCollision(x, y, w, h) {
+            const x1 = Math.floor(x / TILE_SIZE);
+            const y1 = Math.floor(y / TILE_SIZE);
+            const x2 = Math.floor((x + w) / TILE_SIZE);
+            const y2 = Math.floor((y + h) / TILE_SIZE);
+
+            for (let xx = x1; xx <= x2; xx++) {
+                for (let yy = y1; yy <= y2; yy++) {
+                    if (getTile(xx, yy) !== 0) {
+                        return { x: xx * TILE_SIZE, y: yy * TILE_SIZE };
+                    }
+                }
+            }
+            return null;
+        }
+
+        // CAMERA
+        let camera = { x: 0, y: 0 };
+
+        // UPDATE
+        let gameTime = 0;
+        function update() {
+            gameTime++;
+
+            // Player movement
+            if (keys['KeyA']) {
+                player.vx = -player.speed;
+                player.direction = -1;
+            }
+            if (keys['KeyD']) {
+                player.vx = player.speed;
+                player.direction = 1;
+            }
+
+            player.vy += GRAVITY;
+            player.vx *= FRICTION;
+
+            // X collision
+            player.x += player.vx;
+            if (checkCollision(player.x, player.y, player.width, player.height)) {
+                player.x -= player.vx;
+                player.vx = 0;
+            }
+
+            // Y collision
+            player.y += player.vy;
+            player.grounded = false;
+            if (checkCollision(player.x, player.y, player.width, player.height)) {
+                player.y -= player.vy;
+                player.grounded = true;
+                player.vy = 0;
+            }
+
+            // Jump
+            if (keys['Space'] && player.grounded) {
+                player.vy = -player.jumpPower;
+            }
+
+            // Update depth/biome
+            player.depth = Math.floor(player.y / TILE_SIZE);
+            if (player.depth < 25) player.biome = 'Surface';
+            else if (player.depth < 50) player.biome = 'Underground';
+            else player.biome = 'Caverns';
+
+            // Mining/attacking
+            if (mouseDown && player.cooldown === 0) {
+                const mx = Math.floor((mouseX + camera.x) / TILE_SIZE);
+                const my = Math.floor((mouseY + camera.y) / TILE_SIZE);
+                const item = player.inventory[player.activeSlot];
+                const itemData = ITEMS[item.id];
+
+                if (itemData.type === 'tool' && getTile(mx, my) !== 0) {
+                    setTile(mx, my, 0);
+                    item.count++;
+                    for (let i = 0; i < 3; i++) {
+                        addParticle(mx * TILE_SIZE + 16, my * TILE_SIZE + 16, Math.random() - 0.5, Math.random() - 1, '#ffff00');
+                    }
+                    player.cooldown = 8;
+                } else if (itemData.type === 'block' && getTile(mx, my) === 0 && item.count > 0) {
+                    setTile(mx, my, itemData.tileId);
+                    item.count--;
+                    player.cooldown = 5;
+                } else if (itemData.type === 'weapon') {
+                    enemies.forEach(e => {
+                        const dx = e.x - player.x;
+                        const dy = e.y - player.y;
+                        if (Math.hypot(dx, dy) < TILE_SIZE * 2.5) {
+                            e.hp -= itemData.damage;
+                            e.vy = -5;
+                            addParticle(e.x, e.y, 0, -2, '#ff0000');
+                        }
+                    });
+                    player.cooldown = 10;
+                }
+            }
+
+            if (player.cooldown > 0) player.cooldown--;
+
+            // Enemies
+            if (Math.random() < 0.005) spawnEnemy();
+            enemies = enemies.filter(e => e.hp > 0);
+
+            enemies.forEach(e => {
+                e.vy += GRAVITY;
+                e.vx *= 0.9;
+                e.jumpTimer--;
+
+                if (e.jumpTimer <= 0 && Math.random() < 0.02) {
+                    e.vx = (Math.random() < 0.5 ? -1 : 1) * 2;
+                    e.vy = -7;
+                    e.jumpTimer = 40;
+                }
+
+                e.x += e.vx;
+                if (checkCollision(e.x, e.y, e.width, e.height)) {
+                    e.x -= e.vx;
+                    e.vx *= -0.8;
+                }
+
+                e.y += e.vy;
+                if (checkCollision(e.x, e.y, e.width, e.height)) {
+                    e.y -= e.vy;
+                    e.vy = 0;
+                }
+
+                if (Math.hypot(e.x - player.x, e.y - player.y) < 40) {
+                    player.hp -= 0.3;
+                    if (player.hp <= 0) {
+                        player.hp = player.maxHp;
+                        player.x = 100 * TILE_SIZE;
+                        player.y = 20 * TILE_SIZE;
+                    }
+                }
+            });
+
+            // Particles
+            particles.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.3;
+                p.life--;
+            });
+            particles = particles.filter(p => p.life > 0);
+
+            // Camera
+            camera.x += (player.x - canvas.width / 2 - camera.x) * 0.1;
+            camera.y += (player.y - canvas.height / 2 - camera.y) * 0.1;
+            camera.x = Math.max(0, Math.min(MAP_WIDTH * TILE_SIZE - canvas.width, camera.x));
+            camera.y = Math.max(0, Math.min(MAP_HEIGHT * TILE_SIZE - canvas.height, camera.y));
+
+            // Update UI
+            document.getElementById('hp-text').textContent = `${Math.ceil(player.hp)}/${player.maxHp}`;
+            document.getElementById('hp-bar').style.width = (player.hp / player.maxHp) * 100 + '%';
+            document.getElementById('depth-text').textContent = `${player.depth}m`;
+            document.getElementById('biome-text').textContent = player.biome;
+        }
+
+        // DRAW
+        const COLORS = {
+            1: '#22c55e', 2: '#8b6914', 3: '#606060', 4: '#8b4513'
+        };
+
+        function draw() {
+            ctx.fillStyle = player.depth > 40 ? '#1a1a2e' : '#87ceeb';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+            ctx.translate(-camera.x, -camera.y);
+
+            // Draw tiles
+            const sx = Math.max(0, Math.floor(camera.x / TILE_SIZE));
+            const ex = Math.min(MAP_WIDTH, Math.ceil((camera.x + canvas.width) / TILE_SIZE));
+            const sy = Math.max(0, Math.floor(camera.y / TILE_SIZE));
+            const ey = Math.min(MAP_HEIGHT, Math.ceil((camera.y + canvas.height) / TILE_SIZE));
+
+            for (let x = sx; x < ex; x++) {
+                for (let y = sy; y < ey; y++) {
+                    const tile = getTile(x, y);
+                    if (tile) {
+                        ctx.fillStyle = COLORS[tile];
+                        ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                        ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+                        ctx.strokeRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    }
+                }
+            }
+
+            // Draw enemies
+            enemies.forEach(e => {
+                ctx.fillStyle = e.color;
+                ctx.fillRect(e.x, e.y, e.width, e.height);
+                ctx.fillStyle = '#ff0000';
+                ctx.fillRect(e.x, e.y - 5, (e.hp / e.maxHp) * e.width, 3);
+            });
+
+            // Draw particles
+            particles.forEach(p => {
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = p.life / 30;
+                ctx.fillRect(p.x, p.y, 4, 4);
+                ctx.globalAlpha = 1;
+            });
+
+            // Draw player
+            ctx.fillStyle = '#ff4444';
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(player.x + (player.direction > 0 ? 12 : 4), player.y + 6, 4, 4);
+
+            ctx.restore();
+        }
+
+        // GAME LOOP
+        generateWorld();
+        updateHotbar();
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>
