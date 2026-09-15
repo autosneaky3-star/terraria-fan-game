@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terraria Fan Game</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <canvas id="gameCanvas"></canvas>
+        
+        <div class="ui-panel">
+            <div class="player-stats">
+                <div class="stat">
+                    <span>HP:</span>
+                    <div class="stat-bar">
+                        <div class="stat-fill" id="hpBar" style="width: 100%"></div>
+                    </div>
+                    <span id="hpText">100/100</span>
+                </div>
+                <div class="stat">
+                    <span>Mana:</span>
+                    <div class="stat-bar">
+                        <div class="stat-fill mana" id="manaBar" style="width: 100%"></div>
+                    </div>
+                    <span id="manaText">50/50</span>
+                </div>
+            </div>
+
+            <div class="inventory-section">
+                <h3>Inventory</h3>
+                <div class="inventory-grid" id="inventory"></div>
+            </div>
+
+            <div class="hotbar">
+                <h4>Hotbar</h4>
+                <div class="hotbar-items" id="hotbar"></div>
+            </div>
+
+            <div class="crafting-section">
+                <button id="toggleCrafting" class="craft-btn">Crafting Menu</button>
+                <div class="crafting-menu" id="craftingMenu" style="display: none;">
+                    <h3>Crafting Recipes</h3>
+                    <div class="recipes-list" id="recipesList"></div>
+                </div>
+            </div>
+
+            <div class="info-panel">
+                <p id="coordsText">X: 0 | Y: 0</p>
+                <p id="biomeText">Biome: Forest</p>
+                <p id="depthText">Depth: 0m</p>
+            </div>
+        </div>
+
+        <div class="game-info">
+            <p><strong>WASD</strong> - Move | <strong>Space</strong> - Jump | <strong>Mouse</strong> - Mine/Attack</p>
+            <p><strong>1-5</strong> - Select Hotbar | <strong>C</strong> - Crafting | <strong>E</strong> - Equip</p>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
